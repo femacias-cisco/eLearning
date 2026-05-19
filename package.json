@@ -1,0 +1,11 @@
+{
+  "name": "barranquismo-lms",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node --check app.js && npm run build",
+    "serve": "npm run build && python3 -m http.server 8765 --bind 127.0.0.1 --directory dist"
+  }
+}

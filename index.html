@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Barranquismo LMS course catalog, student progress dashboard, lesson workspace, and exam center."
+    />
+    <title>Barranquismo LMS</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#home" aria-label="Barranquismo LMS home">
+        <span class="brand-mark" aria-hidden="true">BL</span>
+        <span class="brand-text">
+          <strong>Barranquismo LMS</strong>
+          <small>Safety training</small>
+        </span>
+      </a>
+
+      <nav class="primary-nav" aria-label="Primary navigation">
+        <a href="#courses">Courses</a>
+        <a href="#learn">Lessons</a>
+        <a href="#dashboard">Dashboard</a>
+        <a href="#exams">Exams</a>
+      </nav>
+
+      <div class="role-switch" aria-label="Role view">
+        <button class="role-option" type="button" data-role="student" aria-pressed="true">
+          Student
+        </button>
+        <button class="role-option" type="button" data-role="instructor" aria-pressed="false">
+          Instructor
+        </button>
+      </div>
+    </header>
+
+    <main id="home">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-content">
+          <p class="eyebrow">Canyoning certification workspace</p>
+          <h1 id="hero-title">Train, evaluate, and certify canyoning skills.</h1>
+          <p class="hero-copy">
+            A focused LMS prototype for structured canyoning courses, practical skill tracking,
+            and controlled knowledge checks.
+          </p>
+          <div class="hero-actions">
+            <button class="button primary" type="button" id="start-learning">Start learning</button>
+            <button class="button secondary" type="button" id="jump-exam">Open exam center</button>
+          </div>
+        </div>
+        <dl class="hero-stats" aria-label="Program summary">
+          <div>
+            <dt id="hero-course-count">0</dt>
+            <dd>Courses</dd>
+          </div>
+          <div>
+            <dt id="hero-lesson-count">0</dt>
+            <dd>Lessons</dd>
+          </div>
+          <div>
+            <dt>3</dt>
+            <dd>Exam attempts</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section id="courses" class="section-block" aria-labelledby="courses-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Catalog</p>
+            <h2 id="courses-title">Featured courses</h2>
+          </div>
+          <div class="filter-bar" aria-label="Filter courses by level">
+            <button class="filter-chip active" type="button" data-filter="all" aria-pressed="true">
+              All
+            </button>
+            <button class="filter-chip" type="button" data-filter="Beginner" aria-pressed="false">
+              Beginner
+            </button>
+            <button
+              class="filter-chip"
+              type="button"
+              data-filter="Intermediate"
+              aria-pressed="false"
+            >
+              Intermediate
+            </button>
+            <button class="filter-chip" type="button" data-filter="Advanced" aria-pressed="false">
+              Advanced
+            </button>
+          </div>
+        </div>
+        <div id="course-list" class="course-grid" aria-live="polite"></div>
+      </section>
+
+      <section id="learn" class="section-block" aria-labelledby="learn-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Lesson workspace</p>
+            <h2 id="learn-title">Active course</h2>
+          </div>
+          <button class="button quiet" type="button" id="reset-progress">Reset demo data</button>
+        </div>
+
+        <div class="learning-workspace">
+          <aside class="lesson-rail" aria-label="Course lessons">
+            <div id="active-course-summary"></div>
+            <div id="lesson-list" class="lesson-list"></div>
+          </aside>
+          <article id="lesson-detail" class="lesson-detail" aria-live="polite"></article>
+        </div>
+      </section>
+
+      <section id="dashboard" class="section-block" aria-labelledby="dashboard-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Operations</p>
+            <h2 id="dashboard-title">Dashboard</h2>
+          </div>
+          <p class="section-note" id="dashboard-mode">Student view</p>
+        </div>
+        <div id="dashboard-summary" class="metric-grid"></div>
+        <div id="dashboard-panels" class="dashboard-grid"></div>
+      </section>
+
+      <section id="exams" class="section-block" aria-labelledby="exams-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Assessment</p>
+            <h2 id="exams-title">Exam center</h2>
+          </div>
+          <p class="section-note" id="attempt-summary"></p>
+        </div>
+        <div id="exam-shell" class="exam-shell" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <footer>
+      <small>© 2026 Barranquismo LMS</small>
+    </footer>
+
+    <p id="status-message" class="sr-only" aria-live="polite"></p>
+  </body>
+</html>
