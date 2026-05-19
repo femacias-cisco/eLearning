@@ -24,6 +24,21 @@ This repo includes `amplify.yml`, so AWS Amplify Hosting can build and publish t
 
 The current app is frontend-only. It does not require a local server after deployment because all runtime files are static HTML, CSS, JavaScript, and image assets.
 
+## Current AWS Deployment
+
+- Region: `us-east-1`
+- Amplify app ID: `d17hcfxcpagshj`
+- Branch: `developer`
+- Public URL: `https://developer.d17hcfxcpagshj.amplifyapp.com`
+
+This environment was deployed with Amplify's manual deployment flow. It is hosted publicly by Amplify and does not depend on a local server.
+
+To redeploy the current branch after local changes:
+
+```bash
+AWS_PROFILE=elearning-dev npm run deploy:amplify
+```
+
 ## Future AWS Backend
 
 When you add Cognito, AppSync, DynamoDB, or protected media delivery, keep service endpoints out of committed source files. Use Amplify environment variables or generated runtime config during the build.
