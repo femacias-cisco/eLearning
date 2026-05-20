@@ -1,4 +1,5 @@
-const STORAGE_KEY = "barranquismo-lms-state-v1";
+const LEGACY_STORAGE_KEY = "barranquismo-lms-state-v1";
+const STORAGE_KEY = "barranquismo-lms-state-v2";
 const MAX_EXAM_ATTEMPTS = 3;
 
 const courses = [
@@ -327,18 +328,38 @@ const courses = [
   }
 ];
 
-const roster = [
-  { name: "Ana Ruiz", courseId: "fundamentals", practical: "Ready", score: 92 },
-  { name: "Mateo Silva", courseId: "rope", practical: "Pending", score: 78 },
-  { name: "Lucia Torres", courseId: "rescue", practical: "Review", score: 84 },
-  { name: "Daniel Mora", courseId: "fundamentals", practical: "Ready", score: 88 }
-];
+const SUPER_ADMIN_USER = {
+  id: "super-admin",
+  name: "Super Admin",
+  email: "admin@barranquismo.test",
+  password: "AdminDemo2026!",
+  role: "admin",
+  status: "approved",
+  createdAt: "2026-05-19T00:00:00.000Z",
+  approvedAt: "2026-05-19T00:00:00.000Z",
+  approvedBy: "system"
+};
 
+const ROLE_LABELS = {
+  admin: "Super admin",
+  instructor: "Instructor",
+  student: "Student"
+};
+
+const STATUS_LABELS = {
+  approved: "Approved",
+  pending: "Pending approval"
+};
+
+let memoryStorage = {};
 let state = loadState();
 let courseFilter = "all";
 let currentExam = null;
 
 const els = {
+  accountMenu: document.querySelector("#account-menu"),
+  accountNote: document.querySelector("#account-note"),
+  authShell: document.querySelector("#auth-shell"),
   courseList: document.querySelector("#course-list"),
   lessonList: document.querySelector("#lesson-list"),
   lessonDetail: document.querySelector("#lesson-detail"),
@@ -351,55 +372,170 @@ const els = {
   status: document.querySelector("#status-message")
 };
 
-function loadState() {
-  const fallback = {
-    role: "student",
+function defaultLearningState() {
+  return {
     activeCourseId: "fundamentals",
     selectedLessonId: "hazard-reading",
     completedLessons: [],
     examAttempts: {}
   };
+}
+
+function readStoredValue(key) {
+  try {
+    if (typeof localStorage === "undefined") {
+      return memoryStorage[key] || null;
+    }
+
+    return localStorage.getItem(key);
+  } catch {
+    return memoryStorage[key] || null;
+  }
+}
+
+function writeStoredValue(key, value) {
+  memoryStorage[key] = value;
 
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return saved ? { ...fallback, ...saved } : fallback;
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(key, value);
+    }
+  } catch {
+    // Memory storage keeps the current browser session usable when storage is blocked.
+  }
+}
+
+function loadState() {
+  const fallback = {
+    users: [SUPER_ADMIN_USER],
+    currentUserId: null,
+    learnerProgress: {
+      guest: defaultLearningState()
+    }
+  };
+
+  try {
+    const saved = JSON.parse(readStoredValue(STORAGE_KEY) || readStoredValue(LEGACY_STORAGE_KEY));
+    if (!saved) return fallback;
+
+    const migratedGuestProgress = {
+      activeCourseId: saved.activeCourseId || fallback.learnerProgress.guest.activeCourseId,
+      selectedLessonId: saved.selectedLessonId || fallback.learnerProgress.guest.selectedLessonId,
+      completedLessons: Array.isArray(saved.completedLessons) ? saved.completedLessons : [],
+      examAttempts: saved.examAttempts && typeof saved.examAttempts === "object" ? saved.examAttempts : {}
+    };
+
+    const nextState = {
+      ...fallback,
+      ...saved,
+      users: normalizeUsers(saved.users),
+      learnerProgress: normalizeLearnerProgress(saved.learnerProgress || { guest: migratedGuestProgress })
+    };
+
+    if (!nextState.users.some((user) => user.id === nextState.currentUserId)) {
+      nextState.currentUserId = null;
+    }
+
+    return nextState;
   } catch {
     return fallback;
   }
 }
 
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  writeStoredValue(STORAGE_KEY, JSON.stringify(state));
+}
+
+function normalizeUsers(users = []) {
+  const savedAdmin = users.find(
+    (user) =>
+      user?.id === SUPER_ADMIN_USER.id ||
+      String(user?.email || "").toLowerCase() === SUPER_ADMIN_USER.email
+  );
+  const admin = {
+    ...SUPER_ADMIN_USER,
+    ...savedAdmin,
+    id: SUPER_ADMIN_USER.id,
+    email: SUPER_ADMIN_USER.email,
+    role: "admin",
+    status: "approved",
+    password: savedAdmin?.password || SUPER_ADMIN_USER.password
+  };
+  const seenEmails = new Set([admin.email]);
+  const normalizedUsers = [admin];
+
+  users.forEach((user) => {
+    if (!user || user.id === SUPER_ADMIN_USER.id) return;
+
+    const email = String(user.email || "").trim().toLowerCase();
+    if (!email || seenEmails.has(email)) return;
+
+    const role = ["student", "instructor"].includes(user.role) ? user.role : "student";
+    const status = user.status === "approved" ? "approved" : "pending";
+    seenEmails.add(email);
+    normalizedUsers.push({
+      id: user.id || createId("user"),
+      name: String(user.name || "New user").trim(),
+      email,
+      password: String(user.password || ""),
+      role,
+      status,
+      createdAt: user.createdAt || new Date().toISOString(),
+      approvedAt: user.approvedAt || null,
+      approvedBy: user.approvedBy || null
+    });
+  });
+
+  return normalizedUsers;
+}
+
+function normalizeLearnerProgress(progress = {}) {
+  const normalized = {};
+
+  Object.entries(progress).forEach(([key, value]) => {
+    normalized[key] = {
+      ...defaultLearningState(),
+      ...(value || {}),
+      completedLessons: Array.isArray(value?.completedLessons) ? value.completedLessons : [],
+      examAttempts: value?.examAttempts && typeof value.examAttempts === "object" ? value.examAttempts : {}
+    };
+  });
+
+  if (!normalized.guest) {
+    normalized.guest = defaultLearningState();
+  }
+
+  return normalized;
 }
 
 function activeCourse() {
-  return courses.find((course) => course.id === state.activeCourseId) || courses[0];
+  return courses.find((course) => course.id === learningState().activeCourseId) || courses[0];
 }
 
 function lessonKey(courseId, lessonId) {
   return `${courseId}:${lessonId}`;
 }
 
-function completedCount(course) {
+function completedCount(course, progress = learningState()) {
   return course.lessons.filter((lesson) =>
-    state.completedLessons.includes(lessonKey(course.id, lesson.id))
+    progress.completedLessons.includes(lessonKey(course.id, lesson.id))
   ).length;
 }
 
-function courseProgress(course) {
-  return Math.round((completedCount(course) / course.lessons.length) * 100);
+function courseProgress(course, progress = learningState()) {
+  return Math.round((completedCount(course, progress) / course.lessons.length) * 100);
 }
 
-function getAttempts(courseId) {
-  return state.examAttempts[courseId] || [];
+function getAttempts(courseId, progress = learningState()) {
+  return progress.examAttempts[courseId] || [];
 }
 
-function latestAttempt(courseId) {
-  return getAttempts(courseId).at(-1);
+function latestAttempt(courseId, progress = learningState()) {
+  return getAttempts(courseId, progress).at(-1);
 }
 
-function allAttempts() {
-  return Object.values(state.examAttempts).flat();
+function allAttempts(progress = learningState()) {
+  return Object.values(progress.examAttempts).flat();
 }
 
 function formatDate(value) {
@@ -412,6 +548,87 @@ function formatDate(value) {
 
 function pluralize(count, noun) {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function createId(prefix) {
+  if (window.crypto?.randomUUID) {
+    return `${prefix}-${window.crypto.randomUUID()}`;
+  }
+
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function currentUser() {
+  return state.users.find((user) => user.id === state.currentUserId) || null;
+}
+
+function userById(userId) {
+  return state.users.find((user) => user.id === userId) || null;
+}
+
+function roleLabel(role) {
+  return ROLE_LABELS[role] || "User";
+}
+
+function statusLabel(status) {
+  return STATUS_LABELS[status] || "Pending approval";
+}
+
+function statusPillClass(status) {
+  return status === "approved" ? "success" : "warn";
+}
+
+function learningKey() {
+  const user = currentUser();
+  return user?.role === "student" ? user.id : "guest";
+}
+
+function learnerProgressFor(userId) {
+  if (!state.learnerProgress[userId]) {
+    state.learnerProgress[userId] = defaultLearningState();
+  }
+
+  return state.learnerProgress[userId];
+}
+
+function learningState() {
+  return learnerProgressFor(learningKey());
+}
+
+function canTrackLearning() {
+  const user = currentUser();
+  return user?.role === "student" && user.status === "approved";
+}
+
+function canTakeExam() {
+  return canTrackLearning();
+}
+
+function isApprovedInstructor(user = currentUser()) {
+  return user?.role === "instructor" && user.status === "approved";
+}
+
+function examGateLabel() {
+  const user = currentUser();
+  if (!user) return "Sign in required";
+  if (user.role === "student") return user.status === "approved" ? "Ready" : "Approval pending";
+  return "Student exam only";
+}
+
+function trackingGateLabel() {
+  const user = currentUser();
+  if (!user) return "Sign in to track";
+  if (user.role === "student") return user.status === "approved" ? "Ready" : "Approval pending";
+  return "Preview only";
 }
 
 function setStatus(message) {
@@ -430,11 +647,159 @@ function renderHeroStats() {
   );
 }
 
-function renderRoleSwitch() {
-  document.querySelectorAll(".role-option").forEach((button) => {
-    const isActive = button.dataset.role === state.role;
-    button.setAttribute("aria-pressed", String(isActive));
-  });
+function renderAccountMenu() {
+  const user = currentUser();
+
+  if (!user) {
+    els.accountMenu.innerHTML = `
+      <button class="button quiet compact" type="button" data-auth-focus="login">Sign in</button>
+      <button class="button primary compact" type="button" data-auth-focus="signup">Create account</button>
+    `;
+    return;
+  }
+
+  els.accountMenu.innerHTML = `
+    <span class="account-badge">
+      <strong>${escapeHtml(user.name)}</strong>
+      <small>${roleLabel(user.role)} · ${statusLabel(user.status)}</small>
+    </span>
+    <button class="button quiet compact" type="button" data-sign-out>Sign out</button>
+  `;
+}
+
+function renderAuthShell() {
+  const user = currentUser();
+
+  if (!user) {
+    els.accountNote.textContent = "Signed out";
+    els.authShell.innerHTML = `
+      <form class="auth-card" id="login-form" novalidate>
+        <div>
+          <p class="eyebrow">Login</p>
+          <h3>Sign in</h3>
+        </div>
+        <label class="field">
+          <span>Email</span>
+          <input id="login-email" type="email" name="email" autocomplete="email" required />
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input type="password" name="password" autocomplete="current-password" required />
+        </label>
+        <p class="form-message" aria-live="polite"></p>
+        <button class="button primary" type="submit">Sign in</button>
+      </form>
+
+      <form class="auth-card" id="signup-form" novalidate>
+        <div>
+          <p class="eyebrow">Signup</p>
+          <h3>Create account</h3>
+        </div>
+        <div class="form-grid">
+          <label class="field">
+            <span>Name</span>
+            <input id="signup-name" type="text" name="name" autocomplete="name" required />
+          </label>
+          <label class="field">
+            <span>Role</span>
+            <select name="role" required>
+              <option value="student">Student</option>
+              <option value="instructor">Instructor</option>
+            </select>
+          </label>
+        </div>
+        <label class="field">
+          <span>Email</span>
+          <input type="email" name="email" autocomplete="email" required />
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input type="password" name="password" autocomplete="new-password" minlength="8" required />
+        </label>
+        <p class="form-message" aria-live="polite"></p>
+        <button class="button primary" type="submit">Create account</button>
+      </form>
+    `;
+    return;
+  }
+
+  els.accountNote.textContent = `${roleLabel(user.role)} · ${statusLabel(user.status)}`;
+  els.authShell.innerHTML = `
+    <article class="auth-card">
+      <div>
+        <p class="eyebrow">Signed in</p>
+        <h3>${escapeHtml(user.name)}</h3>
+      </div>
+      <div class="course-meta">
+        ${roleStatusPills(user)}
+      </div>
+      <div class="user-meta">
+        <span>${escapeHtml(user.email)}</span>
+        <span>Joined ${formatDate(user.createdAt)}</span>
+      </div>
+      <button class="button quiet" type="button" data-sign-out>Sign out</button>
+    </article>
+    ${renderRoleAccessPanel(user)}
+  `;
+}
+
+function roleStatusPills(user) {
+  return `
+    <span class="pill">${roleLabel(user.role)}</span>
+    <span class="pill ${statusPillClass(user.status)}">${statusLabel(user.status)}</span>
+  `;
+}
+
+function renderRoleAccessPanel(user) {
+  if (user.role === "admin") {
+    const pendingInstructors = usersByRole("instructor", "pending");
+    return `
+      <article class="auth-card wide-card">
+        <div>
+          <p class="eyebrow">Approvals</p>
+          <h3>Instructor requests</h3>
+        </div>
+        ${renderUserRows(pendingInstructors, "No instructors waiting for approval.", "Approve instructor")}
+      </article>
+    `;
+  }
+
+  if (user.role === "instructor") {
+    const pendingStudents = usersByRole("student", "pending");
+    return `
+      <article class="auth-card wide-card">
+        <div>
+          <p class="eyebrow">Approvals</p>
+          <h3>Student requests</h3>
+        </div>
+        ${
+          user.status === "approved"
+            ? renderUserRows(pendingStudents, "No students waiting for approval.", "Approve student")
+            : `<div class="empty-state compact">Instructor approval pending.</div>`
+        }
+      </article>
+    `;
+  }
+
+  const activeProgress = learnerProgressFor(user.id);
+  const completed = courses.reduce((total, course) => total + completedCount(course, activeProgress), 0);
+  const lessonTotal = courses.reduce((total, course) => total + course.lessons.length, 0);
+
+  return `
+    <article class="auth-card wide-card">
+      <div>
+        <p class="eyebrow">Student status</p>
+        <h3>${user.status === "approved" ? "Learning access active" : "Approval pending"}</h3>
+      </div>
+      <div class="progress-label">
+        <span>${completed} of ${lessonTotal} lessons</span>
+        <span>${Math.round((completed / lessonTotal) * 100)}%</span>
+      </div>
+      <div class="progress-track" aria-hidden="true">
+        <div class="progress-fill" style="width: ${Math.round((completed / lessonTotal) * 100)}%"></div>
+      </div>
+    </article>
+  `;
 }
 
 function renderCourseCards() {
@@ -443,10 +808,14 @@ function renderCourseCards() {
 
   els.courseList.innerHTML = visibleCourses
     .map((course) => {
-      const progress = courseProgress(course);
+      const progressState = learningState();
+      const progress = canTrackLearning() ? courseProgress(course, progressState) : 0;
       const attempts = getAttempts(course.id);
       const latest = latestAttempt(course.id);
-      const isActive = course.id === state.activeCourseId;
+      const isActive = course.id === progressState.activeCourseId;
+      const lessonLabel = canTrackLearning()
+        ? `${completedCount(course, progressState)} of ${course.lessons.length} lessons`
+        : `${course.lessons.length} lessons`;
 
       return `
         <article class="course-card${isActive ? " active" : ""}">
@@ -465,8 +834,8 @@ function renderCourseCards() {
           </div>
           <div>
             <div class="progress-label">
-              <span>${completedCount(course)} of ${course.lessons.length} lessons</span>
-              <span>${progress}%</span>
+              <span>${lessonLabel}</span>
+              <span>${canTrackLearning() ? `${progress}%` : trackingGateLabel()}</span>
             </div>
             <div class="progress-track" aria-hidden="true">
               <div class="progress-fill" style="width: ${progress}%"></div>
@@ -477,13 +846,17 @@ function renderCourseCards() {
           </div>
           <div class="card-actions">
             <button class="button primary" type="button" data-select-course="${course.id}">
-              ${isActive ? "Continue course" : "Select course"}
+              ${canTrackLearning() ? (isActive ? "Continue course" : "Select course") : "Preview course"}
             </button>
             <button class="button quiet" type="button" data-course-exam="${course.id}">
-              Exam
+              ${canTakeExam() ? "Exam" : "Exam locked"}
             </button>
           </div>
-          <p class="section-note">${pluralize(MAX_EXAM_ATTEMPTS - attempts.length, "attempt")} remaining</p>
+          <p class="section-note">${
+            canTakeExam()
+              ? `${pluralize(MAX_EXAM_ATTEMPTS - attempts.length, "attempt")} remaining`
+              : examGateLabel()
+          }</p>
         </article>
       `;
     })
@@ -508,9 +881,10 @@ function selectCourse(courseId) {
   const course = courses.find((candidate) => candidate.id === courseId);
   if (!course) return;
 
-  state.activeCourseId = course.id;
-  state.selectedLessonId =
-    course.lessons.find((lesson) => !state.completedLessons.includes(lessonKey(course.id, lesson.id)))
+  const progress = learningState();
+  progress.activeCourseId = course.id;
+  progress.selectedLessonId =
+    course.lessons.find((lesson) => !progress.completedLessons.includes(lessonKey(course.id, lesson.id)))
       ?.id || course.lessons[0].id;
   currentExam = null;
   saveState();
@@ -520,13 +894,14 @@ function selectCourse(courseId) {
 
 function renderLessonWorkspace() {
   const course = activeCourse();
+  const progress = learningState();
   const selectedLesson =
-    course.lessons.find((lesson) => lesson.id === state.selectedLessonId) || course.lessons[0];
+    course.lessons.find((lesson) => lesson.id === progress.selectedLessonId) || course.lessons[0];
 
-  state.selectedLessonId = selectedLesson.id;
+  progress.selectedLessonId = selectedLesson.id;
   saveState();
 
-  const progress = courseProgress(course);
+  const progressPercent = canTrackLearning() ? courseProgress(course, progress) : 0;
   els.activeCourseSummary.innerHTML = `
     <div class="active-course-title">
       <p class="eyebrow">${course.level}</p>
@@ -535,16 +910,16 @@ function renderLessonWorkspace() {
     </div>
     <div class="progress-label">
       <span>Course progress</span>
-      <span>${progress}%</span>
+      <span>${canTrackLearning() ? `${progressPercent}%` : trackingGateLabel()}</span>
     </div>
     <div class="progress-track" aria-hidden="true">
-      <div class="progress-fill" style="width: ${progress}%"></div>
+      <div class="progress-fill" style="width: ${progressPercent}%"></div>
     </div>
   `;
 
   els.lessonList.innerHTML = course.lessons
     .map((lesson, index) => {
-      const isComplete = state.completedLessons.includes(lessonKey(course.id, lesson.id));
+      const isComplete = canTrackLearning() && progress.completedLessons.includes(lessonKey(course.id, lesson.id));
       const isSelected = lesson.id === selectedLesson.id;
 
       return `
@@ -558,13 +933,23 @@ function renderLessonWorkspace() {
 
   els.lessonList.querySelectorAll("[data-lesson-id]").forEach((button) => {
     button.addEventListener("click", () => {
-      state.selectedLessonId = button.dataset.lessonId;
+      progress.selectedLessonId = button.dataset.lessonId;
       saveState();
       renderLessonWorkspace();
     });
   });
 
-  const isComplete = state.completedLessons.includes(lessonKey(course.id, selectedLesson.id));
+  const isComplete = canTrackLearning() && progress.completedLessons.includes(lessonKey(course.id, selectedLesson.id));
+  const trackingAction = canTrackLearning()
+    ? `
+      <button class="button primary" type="button" id="toggle-lesson">
+        ${isComplete ? "Reopen lesson" : "Mark complete"}
+      </button>
+    `
+    : currentUser()
+      ? `<button class="button primary" type="button" disabled>${trackingGateLabel()}</button>`
+      : `<button class="button primary" type="button" data-auth-focus="login">Sign in to track</button>`;
+
   els.lessonDetail.innerHTML = `
     <div class="lesson-hero">
       <div>
@@ -572,7 +957,9 @@ function renderLessonWorkspace() {
         <h3>${selectedLesson.title}</h3>
         <p>${selectedLesson.summary}</p>
       </div>
-      <span class="pill ${isComplete ? "success" : "warn"}">${isComplete ? "Complete" : "In progress"}</span>
+      <span class="pill ${isComplete ? "success" : "warn"}">${
+        canTrackLearning() ? (isComplete ? "Complete" : "In progress") : "Preview"
+      }</span>
     </div>
     <div class="media-preview" role="img" aria-label="Canyoning training media preview">
       <div>
@@ -587,14 +974,12 @@ function renderLessonWorkspace() {
         .join("")}
     </ul>
     <div class="card-actions">
-      <button class="button primary" type="button" id="toggle-lesson">
-        ${isComplete ? "Reopen lesson" : "Mark complete"}
-      </button>
+      ${trackingAction}
       <button class="button quiet" type="button" id="lesson-exam">Open course exam</button>
     </div>
   `;
 
-  document.querySelector("#toggle-lesson").addEventListener("click", () => {
+  document.querySelector("#toggle-lesson")?.addEventListener("click", () => {
     toggleLesson(course.id, selectedLesson.id);
   });
 
@@ -604,69 +989,127 @@ function renderLessonWorkspace() {
 }
 
 function toggleLesson(courseId, lessonId) {
+  if (!canTrackLearning()) {
+    setStatus("Student approval is required before tracking lessons.");
+    return;
+  }
+
+  const progress = learningState();
   const key = lessonKey(courseId, lessonId);
-  const isComplete = state.completedLessons.includes(key);
-  state.completedLessons = isComplete
-    ? state.completedLessons.filter((completedKey) => completedKey !== key)
-    : [...state.completedLessons, key];
+  const isComplete = progress.completedLessons.includes(key);
+  progress.completedLessons = isComplete
+    ? progress.completedLessons.filter((completedKey) => completedKey !== key)
+    : [...progress.completedLessons, key];
   saveState();
   renderAll();
   setStatus(isComplete ? "Lesson reopened." : "Lesson marked complete.");
 }
 
 function renderDashboard() {
-  const course = activeCourse();
-  const completed = courses.reduce((total, item) => total + completedCount(item), 0);
+  const user = currentUser();
+
+  if (!user) {
+    renderSignedOutDashboard();
+    return;
+  }
+
+  if (user.role === "admin") {
+    renderAdminDashboard();
+    return;
+  }
+
+  if (user.role === "instructor") {
+    renderInstructorDashboard(user);
+    return;
+  }
+
+  renderStudentDashboard(user);
+}
+
+function renderSignedOutDashboard() {
   const lessonTotal = courses.reduce((total, item) => total + item.lessons.length, 0);
-  const attempts = allAttempts();
+  els.dashboardMode.textContent = "Signed out";
+  els.dashboardSummary.innerHTML = metricCards([
+    [`${courses.length}`, "Courses"],
+    [`${lessonTotal}`, "Lessons"],
+    [`${MAX_EXAM_ATTEMPTS}`, "Exam attempts"],
+    ["Login", "Progress tracking"]
+  ]);
+
+  els.dashboardPanels.innerHTML = `
+    <section class="dashboard-panel">
+      <h3>Account required</h3>
+      <p>Sign in or create an account to track lessons, submit exams, and enter approval workflows.</p>
+      <button class="button primary" type="button" data-auth-focus="login">Sign in</button>
+    </section>
+    <section class="dashboard-panel">
+      <h3>Catalog preview</h3>
+      <ul class="dashboard-list">
+        ${courses.map((item) => `<li><span>${item.title}</span><strong>${item.level}</strong></li>`).join("")}
+      </ul>
+    </section>
+  `;
+}
+
+function renderAdminDashboard() {
+  const pendingInstructors = usersByRole("instructor", "pending");
+  const approvedInstructors = usersByRole("instructor", "approved");
+  const pendingStudents = usersByRole("student", "pending");
+  const approvedStudents = usersByRole("student", "approved");
+
+  els.dashboardMode.textContent = "Super admin view";
+  els.dashboardSummary.innerHTML = metricCards([
+    [`${pendingInstructors.length}`, "Instructor approvals"],
+    [`${approvedInstructors.length}`, "Approved instructors"],
+    [`${pendingStudents.length}`, "Pending students"],
+    [`${state.users.length}`, "Total users"]
+  ]);
+
+  els.dashboardPanels.innerHTML = `
+    <section class="dashboard-panel">
+      <h3>Instructor approvals</h3>
+      ${renderUserRows(pendingInstructors, "No instructors waiting for approval.", "Approve instructor")}
+    </section>
+    <section class="dashboard-panel">
+      <h3>Instructor roster</h3>
+      ${renderUserRows(approvedInstructors, "No approved instructors yet.")}
+    </section>
+    <section class="dashboard-panel">
+      <h3>Student status</h3>
+      ${renderUserRows([...pendingStudents, ...approvedStudents], "No student accounts yet.")}
+    </section>
+    <section class="dashboard-panel">
+      <h3>Admin account</h3>
+      ${renderUserRows([currentUser()], "Admin account unavailable.")}
+    </section>
+  `;
+}
+
+function renderInstructorDashboard(user) {
+  const pendingStudents = usersByRole("student", "pending");
+  const approvedStudents = usersByRole("student", "approved");
+  const attempts = allStudentAttempts();
   const passedAttempts = attempts.filter((attempt) => attempt.passed);
-  const averageScore = attempts.length
-    ? Math.round(attempts.reduce((total, attempt) => total + attempt.score, 0) / attempts.length)
-    : 0;
 
-  els.dashboardMode.textContent = state.role === "student" ? "Student view" : "Instructor view";
+  els.dashboardMode.textContent =
+    user.status === "approved" ? "Instructor view" : "Instructor pending approval";
 
-  if (state.role === "instructor") {
+  if (!isApprovedInstructor(user)) {
     els.dashboardSummary.innerHTML = metricCards([
-      ["4", "Active learners"],
-      [`${passedAttempts.length}`, "Passed exams"],
-      ["3", "Practical checks"],
-      [`${courses.length}`, "Courses live"]
+      ["Pending", "Instructor status"],
+      [`${courses.length}`, "Courses visible"],
+      [`${pendingStudents.length}`, "Students waiting"],
+      ["Locked", "Approvals"]
     ]);
-
     els.dashboardPanels.innerHTML = `
       <section class="dashboard-panel">
-        <h3>Practical review queue</h3>
-        ${roster
-          .map((learner) => {
-            const learnerCourse = courses.find((item) => item.id === learner.courseId);
-            return `
-              <div class="queue-row">
-                <div>
-                  <strong>${learner.name}</strong>
-                  <span class="section-note">${learnerCourse.title}</span>
-                </div>
-                <span class="pill ${learner.practical === "Ready" ? "success" : "warn"}">${learner.practical}</span>
-              </div>
-            `;
-          })
-          .join("")}
+        <h3>Approval pending</h3>
+        <p>A super admin must approve this instructor account before student approvals are available.</p>
       </section>
       <section class="dashboard-panel">
-        <h3>Course performance</h3>
+        <h3>Course preview</h3>
         <ul class="dashboard-list">
-          ${courses
-            .map((item) => {
-              const itemAttempts = getAttempts(item.id);
-              const latest = latestAttempt(item.id);
-              return `
-                <li>
-                  <span>${item.title}</span>
-                  <strong>${latest ? `${latest.score}% latest` : `${itemAttempts.length} attempts`}</strong>
-                </li>
-              `;
-            })
-            .join("")}
+          ${courses.map((item) => `<li><span>${item.title}</span><strong>${item.level}</strong></li>`).join("")}
         </ul>
       </section>
     `;
@@ -674,8 +1117,83 @@ function renderDashboard() {
   }
 
   els.dashboardSummary.innerHTML = metricCards([
+    [`${approvedStudents.length}`, "Approved students"],
+    [`${pendingStudents.length}`, "Student approvals"],
+    [`${passedAttempts.length}`, "Passed exams"],
+    [`${courses.length}`, "Courses live"]
+  ]);
+
+  els.dashboardPanels.innerHTML = `
+    <section class="dashboard-panel">
+      <h3>Student approval queue</h3>
+      ${renderUserRows(pendingStudents, "No students waiting for approval.", "Approve student")}
+    </section>
+    <section class="dashboard-panel">
+      <h3>Approved learners</h3>
+      ${renderLearnerRows(approvedStudents)}
+    </section>
+    <section class="dashboard-panel">
+      <h3>Course performance</h3>
+      <ul class="dashboard-list">
+        ${courses
+          .map((course) => {
+            const courseAttempts = attempts.filter((attempt) => attempt.courseId === course.id);
+            const latestScore = courseAttempts.at(-1)?.score;
+            return `
+              <li>
+                <span>${course.title}</span>
+                <strong>${latestScore === undefined ? `${courseAttempts.length} attempts` : `${latestScore}% latest`}</strong>
+              </li>
+            `;
+          })
+          .join("")}
+      </ul>
+    </section>
+    <section class="dashboard-panel">
+      <h3>Recent grades</h3>
+      ${attempts.length ? renderGradeRows(attempts, true) : `<div class="empty-state">No student exam attempts yet.</div>`}
+    </section>
+  `;
+}
+
+function renderStudentDashboard(user) {
+  const progress = learnerProgressFor(user.id);
+  const course = activeCourse();
+  const completed = courses.reduce((total, item) => total + completedCount(item, progress), 0);
+  const lessonTotal = courses.reduce((total, item) => total + item.lessons.length, 0);
+  const attempts = allAttempts(progress);
+  const passedAttempts = attempts.filter((attempt) => attempt.passed);
+  const averageScore = attempts.length
+    ? Math.round(attempts.reduce((total, attempt) => total + attempt.score, 0) / attempts.length)
+    : 0;
+
+  if (user.status !== "approved") {
+    els.dashboardMode.textContent = "Student pending approval";
+    els.dashboardSummary.innerHTML = metricCards([
+      ["Pending", "Student status"],
+      [`${courses.length}`, "Courses visible"],
+      [`${lessonTotal}`, "Lessons locked"],
+      ["Locked", "Exams"]
+    ]);
+    els.dashboardPanels.innerHTML = `
+      <section class="dashboard-panel">
+        <h3>Approval pending</h3>
+        <p>An approved instructor must approve this student account before progress tracking and exams unlock.</p>
+      </section>
+      <section class="dashboard-panel">
+        <h3>Available courses</h3>
+        <ul class="dashboard-list">
+          ${courses.map((item) => `<li><span>${item.title}</span><strong>${item.level}</strong></li>`).join("")}
+        </ul>
+      </section>
+    `;
+    return;
+  }
+
+  els.dashboardMode.textContent = "Student view";
+  els.dashboardSummary.innerHTML = metricCards([
     [`${completed}/${lessonTotal}`, "Lessons complete"],
-    [`${courseProgress(course)}%`, "Active course"],
+    [`${courseProgress(course, progress)}%`, "Active course"],
     [`${averageScore}%`, "Exam average"],
     [course.evaluation.replace(", 2026", ""), "Next practical"]
   ]);
@@ -686,17 +1204,17 @@ function renderDashboard() {
       <ul class="dashboard-list">
         ${courses
           .map((item) => {
-            const progress = courseProgress(item);
+            const itemProgress = courseProgress(item, progress);
             return `
               <li>
                 <div>
                   <strong>${item.title}</strong>
                   <div class="progress-label">
-                    <span>${completedCount(item)} of ${item.lessons.length} lessons</span>
-                    <span>${progress}%</span>
+                    <span>${completedCount(item, progress)} of ${item.lessons.length} lessons</span>
+                    <span>${itemProgress}%</span>
                   </div>
                   <div class="progress-track" aria-hidden="true">
-                    <div class="progress-fill" style="width: ${progress}%"></div>
+                    <div class="progress-fill" style="width: ${itemProgress}%"></div>
                   </div>
                 </div>
               </li>
@@ -749,17 +1267,20 @@ function metricCards(items) {
     .join("");
 }
 
-function renderGradeRows(attempts) {
+function renderGradeRows(attempts, showLearner = false) {
   return attempts
     .slice()
     .reverse()
     .map((attempt) => {
       const course = courses.find((item) => item.id === attempt.courseId);
+      const learner = showLearner ? userById(attempt.userId) : null;
       return `
         <div class="grade-row">
           <div>
             <strong>${course?.title || "Course exam"}</strong>
-            <span class="section-note">${formatDate(attempt.date)}</span>
+            <span class="section-note">${
+              learner ? `${escapeHtml(learner.name)} · ` : ""
+            }${formatDate(attempt.date)}</span>
           </div>
           <span class="pill ${attempt.passed ? "success" : "danger"}">${attempt.score}%</span>
         </div>
@@ -778,6 +1299,38 @@ function certificationMessage(completed, lessonTotal, passedCount) {
 
 function renderExam() {
   const course = activeCourse();
+
+  if (!canTakeExam()) {
+    currentExam = null;
+    els.attemptSummary.textContent = examGateLabel();
+    els.examShell.innerHTML = `
+      <div class="exam-intro">
+        <div>
+          <p class="eyebrow">${course.level} exam</p>
+          <h3>${course.title}</h3>
+          <p>${course.outcome}</p>
+        </div>
+        <div class="exam-meta">
+          <span class="pill">${course.exam.questions.length} randomized questions</span>
+          <span class="pill">${course.exam.passingScore}% passing score</span>
+          <span class="pill warn">${examGateLabel()}</span>
+        </div>
+        <div class="exam-actions">
+          ${
+            currentUser()
+              ? `<button class="button primary" type="button" data-scroll-target="#account">Account status</button>`
+              : `<button class="button primary" type="button" data-auth-focus="login">Sign in</button>`
+          }
+          <button class="button quiet" type="button" id="exam-course">Review lessons</button>
+        </div>
+      </div>
+    `;
+    document.querySelector("#exam-course").addEventListener("click", () => {
+      scrollToSection("#learn");
+    });
+    return;
+  }
+
   const attempts = getAttempts(course.id);
   const attemptsRemaining = MAX_EXAM_ATTEMPTS - attempts.length;
   const latest = latestAttempt(course.id);
@@ -875,6 +1428,11 @@ function renderExam() {
 }
 
 function startExam() {
+  if (!canTakeExam()) {
+    setStatus("Approved student access is required before taking exams.");
+    return;
+  }
+
   const course = activeCourse();
   const attemptsRemaining = MAX_EXAM_ATTEMPTS - getAttempts(course.id).length;
 
@@ -896,6 +1454,13 @@ function startExam() {
 function submitExam(event) {
   event.preventDefault();
 
+  if (!canTakeExam()) {
+    setStatus("Approved student access is required before submitting exams.");
+    currentExam = null;
+    renderExam();
+    return;
+  }
+
   const unanswered = currentExam.questions.filter(
     (question) => currentExam.answers[question.id] === undefined
   );
@@ -907,6 +1472,7 @@ function submitExam(event) {
   }
 
   const course = activeCourse();
+  const progress = learningState();
   const correct = currentExam.questions.filter(
     (question) => currentExam.answers[question.id] === question.answer
   ).length;
@@ -921,7 +1487,7 @@ function submitExam(event) {
     date: new Date().toISOString()
   };
 
-  state.examAttempts[course.id] = [...getAttempts(course.id), record];
+  progress.examAttempts[course.id] = [...getAttempts(course.id, progress), record];
   currentExam = null;
   saveState();
   renderAll();
@@ -938,19 +1504,221 @@ function shuffle(items) {
 }
 
 function resetDemoData() {
-  if (!window.confirm("Reset local demo progress and exam attempts?")) return;
+  if (!window.confirm("Reset progress and exam attempts for the current learner?")) return;
 
-  state = {
-    role: state.role,
-    activeCourseId: "fundamentals",
-    selectedLessonId: "hazard-reading",
-    completedLessons: [],
-    examAttempts: {}
-  };
+  state.learnerProgress[learningKey()] = defaultLearningState();
   currentExam = null;
   saveState();
   renderAll();
   setStatus("Demo data reset.");
+}
+
+function usersByRole(role, status = null) {
+  return state.users.filter((user) => user.role === role && (!status || user.status === status));
+}
+
+function allStudentAttempts() {
+  return usersByRole("student")
+    .flatMap((user) => {
+      const progress = learnerProgressFor(user.id);
+      return Object.values(progress.examAttempts)
+        .flat()
+        .map((attempt) => ({ ...attempt, userId: user.id }));
+    })
+    .sort((left, right) => new Date(left.date) - new Date(right.date));
+}
+
+function renderUserRows(users, emptyMessage, actionLabel = null) {
+  if (!users.length) {
+    return `<div class="empty-state compact">${emptyMessage}</div>`;
+  }
+
+  return users
+    .map(
+      (user) => `
+        <div class="user-row">
+          <div>
+            <strong>${escapeHtml(user.name)}</strong>
+            <span>${escapeHtml(user.email)}</span>
+          </div>
+          <div class="user-actions">
+            ${roleStatusPills(user)}
+            ${
+              actionLabel
+                ? `<button class="button primary compact" type="button" data-approve-user="${user.id}">${actionLabel}</button>`
+                : ""
+            }
+          </div>
+        </div>
+      `
+    )
+    .join("");
+}
+
+function renderLearnerRows(users) {
+  if (!users.length) {
+    return `<div class="empty-state compact">No approved students yet.</div>`;
+  }
+
+  return users
+    .map((user) => {
+      const progress = learnerProgressFor(user.id);
+      const completed = courses.reduce((total, course) => total + completedCount(course, progress), 0);
+      const lessonTotal = courses.reduce((total, course) => total + course.lessons.length, 0);
+      const latest = allAttempts(progress).at(-1);
+
+      return `
+        <div class="user-row">
+          <div>
+            <strong>${escapeHtml(user.name)}</strong>
+            <span>${completed}/${lessonTotal} lessons · ${latest ? `${latest.score}% latest` : "No exams"}</span>
+          </div>
+          <span class="pill success">Approved</span>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function handleLogin(event) {
+  event.preventDefault();
+  const form = event.target;
+  const email = String(form.elements.email.value || "").trim().toLowerCase();
+  const password = String(form.elements.password.value || "");
+  const user = state.users.find((candidate) => candidate.email === email);
+
+  if (!user || user.password !== password) {
+    showFormMessage(form, "Email or password is incorrect.");
+    return;
+  }
+
+  state.currentUserId = user.id;
+  currentExam = null;
+  if (user.role === "student") learnerProgressFor(user.id);
+  saveState();
+  renderAll();
+  setStatus(`${roleLabel(user.role)} signed in.`);
+}
+
+function handleSignup(event) {
+  event.preventDefault();
+  const form = event.target;
+  const formData = new FormData(form);
+  const name = String(formData.get("name") || "").trim();
+  const role = String(formData.get("role") || "student");
+  const email = String(formData.get("email") || "").trim().toLowerCase();
+  const password = String(formData.get("password") || "");
+
+  if (!name || !email || !password) {
+    showFormMessage(form, "Complete all fields.");
+    return;
+  }
+
+  if (!["student", "instructor"].includes(role)) {
+    showFormMessage(form, "Choose a valid role.");
+    return;
+  }
+
+  if (password.length < 8) {
+    showFormMessage(form, "Password must be at least 8 characters.");
+    return;
+  }
+
+  if (state.users.some((user) => user.email === email)) {
+    showFormMessage(form, "An account with this email already exists.");
+    return;
+  }
+
+  const user = {
+    id: createId(role),
+    name,
+    email,
+    password,
+    role,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+    approvedAt: null,
+    approvedBy: null
+  };
+
+  state.users.push(user);
+  state.currentUserId = user.id;
+  if (role === "student") learnerProgressFor(user.id);
+  currentExam = null;
+  saveState();
+  renderAll();
+  setStatus(`${roleLabel(role)} account created. Approval pending.`);
+}
+
+function showFormMessage(form, message) {
+  const messageNode = form.querySelector(".form-message");
+  if (messageNode) {
+    messageNode.textContent = message;
+  }
+}
+
+function signOut() {
+  state.currentUserId = null;
+  currentExam = null;
+  saveState();
+  renderAll();
+  setStatus("Signed out.");
+}
+
+function approveUser(userId) {
+  const actor = currentUser();
+  const target = userById(userId);
+  if (!actor || !target || target.status === "approved") return;
+
+  const canApproveInstructor = actor.role === "admin" && target.role === "instructor";
+  const canApproveStudent =
+    actor.role === "instructor" && actor.status === "approved" && target.role === "student";
+
+  if (!canApproveInstructor && !canApproveStudent) {
+    setStatus("This account cannot approve that request.");
+    return;
+  }
+
+  target.status = "approved";
+  target.approvedAt = new Date().toISOString();
+  target.approvedBy = actor.id;
+  if (target.role === "student") learnerProgressFor(target.id);
+  saveState();
+  renderAll();
+  setStatus(`${roleLabel(target.role)} approved.`);
+}
+
+function handleGlobalClick(event) {
+  const signOutButton = event.target.closest("[data-sign-out]");
+  if (signOutButton) {
+    signOut();
+    return;
+  }
+
+  const approveButton = event.target.closest("[data-approve-user]");
+  if (approveButton) {
+    approveUser(approveButton.dataset.approveUser);
+    return;
+  }
+
+  const authButton = event.target.closest("[data-auth-focus]");
+  if (authButton) {
+    focusAuthForm(authButton.dataset.authFocus);
+    return;
+  }
+
+  const scrollButton = event.target.closest("[data-scroll-target]");
+  if (scrollButton) {
+    scrollToSection(scrollButton.dataset.scrollTarget);
+  }
+}
+
+function focusAuthForm(target) {
+  scrollToSection("#account");
+  window.setTimeout(() => {
+    const field = target === "signup" ? document.querySelector("#signup-name") : document.querySelector("#login-email");
+    field?.focus();
+  }, 220);
 }
 
 function bindStaticEvents() {
@@ -964,13 +1732,16 @@ function bindStaticEvents() {
 
   document.querySelector("#reset-progress").addEventListener("click", resetDemoData);
 
-  document.querySelectorAll(".role-option").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.role = button.dataset.role;
-      saveState();
-      renderAll();
-      setStatus(`${button.textContent.trim()} view selected.`);
-    });
+  document.body.addEventListener("click", handleGlobalClick);
+
+  document.body.addEventListener("submit", (event) => {
+    if (event.target.matches("#login-form")) {
+      handleLogin(event);
+    }
+
+    if (event.target.matches("#signup-form")) {
+      handleSignup(event);
+    }
   });
 
   document.querySelectorAll(".filter-chip").forEach((button) => {
@@ -988,7 +1759,8 @@ function bindStaticEvents() {
 
 function renderAll() {
   renderHeroStats();
-  renderRoleSwitch();
+  renderAccountMenu();
+  renderAuthShell();
   renderCourseCards();
   renderLessonWorkspace();
   renderDashboard();

@@ -105,17 +105,36 @@ button {
   color: var(--rust);
 }
 
-.role-switch {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.25rem;
-  padding: 0.25rem;
-  background: var(--surface-soft);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+.account-widget {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  align-items: center;
 }
 
-.role-option,
+.account-badge {
+  display: grid;
+  min-width: 160px;
+  gap: 0.1rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  line-height: 1.12;
+}
+
+.account-badge strong,
+.account-badge small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-badge small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
 .filter-chip {
   min-height: 36px;
   padding: 0.45rem 0.7rem;
@@ -126,7 +145,6 @@ button {
   font-weight: 800;
 }
 
-.role-option[aria-pressed="true"],
 .filter-chip.active {
   color: #fff;
   background: var(--forest);
@@ -240,6 +258,12 @@ h4 {
   font-weight: 900;
 }
 
+.button.compact {
+  min-height: 36px;
+  padding: 0.5rem 0.75rem;
+  white-space: nowrap;
+}
+
 .button.primary {
   color: #fff;
   background: var(--rust);
@@ -318,6 +342,69 @@ h4 {
   background: var(--surface);
 }
 
+.auth-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.auth-card {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+}
+
+.auth-card.wide-card {
+  min-height: 100%;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.55fr);
+  gap: 0.75rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.65rem 0.75rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.field input:focus,
+.field select:focus {
+  outline: 0;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(43, 122, 120, 0.14);
+}
+
+.form-message {
+  min-height: 1.4rem;
+  margin: 0;
+  color: var(--danger);
+  font-weight: 800;
+}
+
+.user-meta {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--muted);
+  font-weight: 800;
+}
+
 .course-grid,
 .metric-grid,
 .dashboard-grid {
@@ -330,6 +417,7 @@ h4 {
 }
 
 .course-card,
+.auth-card,
 .metric-card,
 .dashboard-panel,
 .exam-shell,
@@ -576,7 +664,8 @@ h4 {
 
 .dashboard-list li,
 .grade-row,
-.queue-row {
+.queue-row,
+.user-row {
   justify-content: space-between;
   padding: 0.8rem;
   background: var(--surface-soft);
@@ -584,8 +673,36 @@ h4 {
 }
 
 .grade-row,
-.queue-row {
+.queue-row,
+.user-row {
   margin-bottom: 0.55rem;
+}
+
+.user-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.user-row strong,
+.user-row span {
+  display: block;
+}
+
+.user-row span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.user-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  align-items: center;
 }
 
 .exam-shell {
@@ -642,6 +759,11 @@ h4 {
   border-radius: 8px;
 }
 
+.empty-state.compact {
+  min-height: 92px;
+  padding: 1rem;
+}
+
 footer {
   width: min(1180px, calc(100% - 2rem));
   margin: 0 auto;
@@ -673,11 +795,17 @@ footer {
     padding-bottom: 0.2rem;
   }
 
-  .role-switch {
-    width: min(100%, 360px);
+  .account-widget {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .account-badge {
+    min-width: min(100%, 280px);
   }
 
   .hero,
+  .auth-grid,
   .learning-workspace,
   .dashboard-grid {
     grid-template-columns: 1fr;
@@ -739,12 +867,20 @@ footer {
   }
 
   .button,
-  .role-option,
   .filter-chip {
     width: 100%;
   }
 
-  .role-switch {
-    grid-template-columns: 1fr 1fr;
+  .account-widget,
+  .form-grid,
+  .user-row,
+  .user-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+  }
+
+  .account-badge {
+    width: 100%;
   }
 }

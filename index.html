@@ -22,20 +22,14 @@
       </a>
 
       <nav class="primary-nav" aria-label="Primary navigation">
+        <a href="#account">Account</a>
         <a href="#courses">Courses</a>
         <a href="#learn">Lessons</a>
         <a href="#dashboard">Dashboard</a>
         <a href="#exams">Exams</a>
       </nav>
 
-      <div class="role-switch" aria-label="Role view">
-        <button class="role-option" type="button" data-role="student" aria-pressed="true">
-          Student
-        </button>
-        <button class="role-option" type="button" data-role="instructor" aria-pressed="false">
-          Instructor
-        </button>
-      </div>
+      <div class="account-widget" id="account-menu" aria-label="Account"></div>
     </header>
 
     <main id="home">
@@ -66,6 +60,17 @@
             <dd>Exam attempts</dd>
           </div>
         </dl>
+      </section>
+
+      <section id="account" class="section-block" aria-labelledby="account-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Access</p>
+            <h2 id="account-title">Account</h2>
+          </div>
+          <p class="section-note" id="account-note">Signed out</p>
+        </div>
+        <div id="auth-shell" class="auth-grid" aria-live="polite"></div>
       </section>
 
       <section id="courses" class="section-block" aria-labelledby="courses-title">

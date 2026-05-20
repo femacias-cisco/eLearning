@@ -1,6 +1,24 @@
 # Barranquismo LMS
 
-Static LMS prototype for canyoning safety training. It includes a course catalog, lesson workspace, dashboard, role switch, local progress persistence, and exam attempts.
+Static LMS prototype for canyoning safety training. It includes a course catalog, lesson workspace, account signup/login, role-based approval queues, student progress persistence, and exam attempts.
+
+## Demo Accounts and Roles
+
+The app seeds one super admin account:
+
+```text
+Email: admin@barranquismo.test
+Password: AdminDemo2026!
+```
+
+Role flow:
+
+- Students and instructors can create accounts from the Account section.
+- New instructor accounts start as pending and must be approved by the super admin.
+- New student accounts start as pending and must be approved by an approved instructor.
+- Only approved students can track lesson progress and submit exams.
+
+This is frontend prototype auth stored in browser storage. Use AWS Cognito, API-backed authorization, and a server-side user store before treating credentials or approvals as production security.
 
 ## Local Commands
 
